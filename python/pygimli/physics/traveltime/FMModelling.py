@@ -31,7 +31,7 @@ def fastMarch(mesh, downwind, times, upT, downT):
     upCandidate = []
 
     for node in downwind:
-        neighNodes = pg.commonNodes(node.cellSet())
+        neighNodes = pg.commonNodes(node.boundSet())
 
         upNodes = []
         for n in neighNodes:
@@ -47,41 +47,44 @@ def fastMarch(mesh, downwind, times, upT, downT):
         else:
             cells = node.cellSet()
             for c in cells:
-                for i in range(c.nodeCount()):
-                    edge = pg.findBoundary(c.node(i), c.node((i + 1) % 3))
+                upList = []
+                for i, n in enumerate(c.nodes()):
+                    if upT[n.id()]: # search only for nodes on upwind
+                        edge = pg.findBoundary(node,n)
+                        if edge != None: # if there is connection with downwind node
+                            upList.append((n, times[n.id()]))
 
-                    a = edge.node(0)
-                    b = edge.node(1)
-                    ta = times[a.id()]
-                    tb = times[b.id()]
+                if len(upList)==2: # only compute traveltimes when nodes in connection with downwind is 2   
+                    a = upList[0][0]
+                    b = upList[1][0]
+                    ta = upList[0][1]
+                    tb = upList[1][1]
+                    line = pg.Line(a.pos(), b.pos())
+                    t = min(1., max(0., line.nearest(node.pos())))
 
-                    if upT[a.id()] and upT[b.id()]:
-                        line = pg.Line(a.pos(), b.pos())
-                        t = min(1., max(0., line.nearest(node.pos())))
+                    ea = pg.findBoundary(a, node)
+                    eb = pg.findBoundary(b, node)
 
-                        ea = pg.findBoundary(a, node)
-                        eb = pg.findBoundary(b, node)
-
-                        if t == 0:
+                    if t == 0:
                             slowness = findSlowness(ea)
-                        elif t == 1:
+                    elif t == 1:
                             slowness = findSlowness(eb)
-                        else:
+                    else:
                             slowness = c.attribute()
 
-                        ttimeA = (ta + slowness * a.pos().distance(node.pos()))
-                        ttimeQ = (ta + t * (tb - ta)) + \
-                            slowness * line(t).distance(node.pos())
-                        ttimeB = (tb + slowness * b.pos().distance(node.pos()))
-                        tmin = min(ttimeA, ttimeQ, ttimeB)
-                        heapq.heappush(upCandidate, (tmin, node.id(), node))
+                    ttimeA = (ta + slowness * a.pos().distance(node.pos()))
+                    ttimeQ = (ta + t * (tb - ta)) + \
+                        slowness * line(t).distance(node.pos()) # time from the line
+                    ttimeB = (tb + slowness * b.pos().distance(node.pos()))
+                    tmin = min(ttimeA, ttimeQ, ttimeB)
+                    heapq.heappush(upCandidate, (tmin, node.id(), node))
 
     candidate = heapq.heappop(upCandidate)
     newUpNode = candidate[2]  # original
     times[newUpNode.id()] = candidate[0]
     upT[newUpNode.id()] = 1
     downwind.remove(newUpNode)
-    newDownNodes = pg.commonNodes(newUpNode.cellSet())
+    newDownNodes = pg.commonNodes(newUpNode.boundSet())
 #    newUpNodeId = candidate[1]  # original
 #    times[newUpNodeId] = candidate[0]
 #    upT[newUpNodeId] = 1
@@ -218,7 +221,7 @@ class TravelTimeFMM(pg.ModellingBase):
                 times[n.id()] = cell.attribute() * n.pos().distance(source)
                 upTags[n.id()] = 1
             for i, n in enumerate(cell.nodes()):
-                tmpNodes = pg.commonNodes(n.cellSet())
+                tmpNodes = pg.commonNodes(n.boundSet())
                 for nn in tmpNodes:
                     if not upTags[nn.id()] and not downTags[nn.id()]:
                         downwind.add(nn)
