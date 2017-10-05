@@ -257,9 +257,11 @@ class TravelTimeFMM(pg.ModellingBase):
     def createJacobian(self, slowness):
         """Jacobian matrix using a fat-ray approach (Jordi et al. 2016)."""
         data = self.data()
-        self.jacobian().resize(data.size(), self.mesh().cellCount())
+        # self.jacobian().resize(data.size(), self.mesh().cellCount())
+        self.jacobian().resize(data.size(), self.regionManager().parameterCount()) # changed
+        prejacobian = np.zeros((data.size(), self.mesh().cellCount())) # added
         # first compute reciprocal travel times for geophone sources
-        self.computeTravelTimes(slowness, calcOthers=True)
+        self.computeTravelTimes(slowness) # calcOthers=True changed
         n_data = data.size()
         cellSizes = self.mesh().cellSizes()
         for i in range(n_data):
@@ -270,8 +272,18 @@ class TravelTimeFMM(pg.ModellingBase):
             if self.debug:
                 print(pg.sum(pg.sign(weight)))
             wa = weight * cellSizes
-            self.jacobian()[i] = wa / np.sum(wa) * tsr / slowness
-            # TODO: check "invalid value in true divide" warning
+            # self.jacobian()[i] = wa / np.sum(wa) * tsr / slowness
+            prejacobian[i] = wa / np.sum(wa) * tsr / self.mesh().cellAttributes() # changed
+        mesh_cellmarkers = np.unique(self.mesh().cellMarkers()) # added
+        # Add for cells in a para-cell
+        for i in range(n_data): # added
+            for marker in mesh_cellmarkers: # added
+                sumforjac = 0.0 # added
+                for cell in self.mesh().cells(): # added
+                    if marker == cell.marker(): # added
+                        sumforjac += prejacobian[i][cell.id()] # added
+                self.jacobian()[(i,marker)] = sumforjac # added
+        # TODO: check "invalid value in true divide" warning
 
     def createDefaultStartModel(self):
         """Create a meaningful starting model in case none is given."""
